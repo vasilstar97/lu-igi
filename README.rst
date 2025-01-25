@@ -25,11 +25,11 @@ The library can be installed with ``pip``:
 How to use
 ----------
 
-Use the library by importing classes from ``my_package``:
+Use the library by importing classes from ``lu_igi``:
 
 ::
 
-   from my_package.my_module_1 import MyClass
+   from lu_igi.my_module_1 import MyClass
 
 For more detailed use case see our `examples <#examples>`__.
 
@@ -60,7 +60,7 @@ The latest version of the library is available in the ``main`` branch.
 
 The repository includes the following directories and modules:
 
--  `my_package <./my_package>`__
+-  `lu_igi <./lu_igi>`__
    directory with the library code:
 
    -  ...

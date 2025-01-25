@@ -1,4 +1,4 @@
-SOURCE_DIR = my_package
+SOURCE_DIR = lu_igi
 TEST_DIR = tests
 
 # code formatting and linting
