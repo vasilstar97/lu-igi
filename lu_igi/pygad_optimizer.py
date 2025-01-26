@@ -1,4 +1,6 @@
+import random
 from functools import reduce
+import numpy as np
 import pygad as pg
 import geopandas as gpd
 import pandas as pd
@@ -13,6 +15,7 @@ from .transition_matrix import TRANSITION_MATRIX
 
 NUM_GENERATIONS = 1000
 SOL_PER_POP = 100
+MUTATION_PROBABILITY = 0.1
 TITLES = ['LU shares (least squares)', 'Probability', 'Adjacency penalty', 'Area penalty', 'Ratio penalty']
 
 class PygadOptimizer():
@@ -29,7 +32,7 @@ class PygadOptimizer():
         for k,title in enumerate(titles):
             data = [solution[k] for solution in solutions]
             data_df = pd.DataFrame(data)
-            data_df.plot(ax=axs[k], title=title, legend=False)
+            data_df.apply(lambda s : 1/s if k != 1 else s).plot(ax=axs[k], title=title, legend=False)
 
         plt.tight_layout()  # Adjust layout
         plt.show()
@@ -95,8 +98,12 @@ class PygadOptimizer():
         return blocks_gdf['ratio_penalty'].sum()
     
     def _get_transition_probability(self, blocks_gdf : gpd.GeoDataFrame) -> float:
-        blocks_gdf['probability'] = blocks_gdf.apply(lambda s : TRANSITION_MATRIX.loc[s['land_use'], s['assigned_land_use']], axis=1)
-        return reduce(lambda a,b : a*b, [p for p in blocks_gdf['probability']])
+        blocks_gdf['probability'] = blocks_gdf.apply(lambda s : s['probabilities'].get(s['assigned_land_use']), axis=1)
+        # blocks_gdf['probability'] = blocks_gdf.apply(lambda s : TRANSITION_MATRIX.loc[s['land_use'], s['assigned_land_use']], axis=1)
+        # return blocks_gdf['probability'].sum()
+        return np.prod(blocks_gdf['probability'])
+        # return reduce(lambda a,b : a*b, [p*10_000 for p in blocks_gdf['probability']])
+        # return np.sum([np.log(p) for p in blocks_gdf['probability']])
     
     def _get_share_least_squares(self, blocks_gdf : gpd.GeoDataFrame, target_lu_shares : dict[LandUse, float]) -> float:
         area = blocks_gdf.area.sum() # TODO overall or only territory ?
@@ -108,7 +115,7 @@ class PygadOptimizer():
             deviations.append(deviation)
         return sum(deviations)
 
-    def run(self, territory_gdf : gpd.GeoDataFrame, lu_shares : dict[LandUse, float], saturation=10, num_generations = NUM_GENERATIONS, sol_per_pop = SOL_PER_POP):
+    def run(self, territory_gdf : gpd.GeoDataFrame, lu_shares : dict[LandUse, float], saturation=10, num_generations = NUM_GENERATIONS, sol_per_pop = SOL_PER_POP, mutation_probability = MUTATION_PROBABILITY):
         blocks_gdf = self._get_blocks_subgdf(territory_gdf)
         adjacency_graph = self._get_adjacency_subgraph(blocks_gdf)
         land_use = list(LandUse)
@@ -131,6 +138,30 @@ class PygadOptimizer():
 
         gene_space = [i for i,_ in enumerate(land_use)]
 
+        def mutation(offspring, ga_instance):
+
+            for j in range(offspring.shape[1]):  # Перебираем потомков
+                probabilities = blocks_gdf.iloc[j]['probabilities']
+                for i in range(offspring.shape[0]):
+                    if random.random()<=mutation_probability:
+                        lu = random.choices(list(probabilities.keys()), list(probabilities.values()),k=1)[0]
+                        offspring[i,j] = land_use.index(lu)
+        
+            return offspring
+        
+        def generate_solution():
+
+            solution = []
+
+            for i in blocks_gdf.index:
+                probabilities = blocks_gdf.loc[i]['probabilities']
+                lu = random.choices(list(probabilities.keys()), list(probabilities.values()),k=1)[0]
+                solution.append(land_use.index(lu))
+            
+            return solution
+
+        initial_population = [generate_solution() for _ in range(0, sol_per_pop)]
+
         with tqdm(total=num_generations) as pbar:
             ga_instance = pg.GA(
                 num_generations = num_generations,
@@ -142,6 +173,8 @@ class PygadOptimizer():
                 on_generation = lambda _: pbar.update(1),
                 stop_criteria = f'saturate_{saturation}',
                 save_solutions=True,
+                mutation_type=mutation,
+                initial_population=initial_population
             )
             ga_instance.run()
 

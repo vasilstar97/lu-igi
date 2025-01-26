@@ -1,3 +1,5 @@
+import random
+from enum import Enum, IntEnum
 import numpy as np
 from pymoo.core.problem import Problem
 from pymoo.algorithms.moo.nsga2 import NSGA2
@@ -5,10 +7,11 @@ from pymoo.algorithms.soo.nonconvex.brkga import BRKGA
 from pymoo.optimize import minimize
 from pymoo.termination import get_termination
 from pymoo.core.population import Population
+from pymoo.core.mutation import Mutation
+from pymoo.operators.crossover.pntx import SinglePointCrossover
 from functools import reduce
 import geopandas as gpd
 import networkx as nx
-from enum import Enum, IntEnum
 from lu_igi.model import Model
 from lu_igi.land_use import LandUse
 from lu_igi.rules import ADJACENCY_RULES_GRAPH, AREA_RANGES, ASPECT_RATIO_RANGES
@@ -146,6 +149,26 @@ class LandUseProblem(Problem):
 
         out["F"] = np.column_stack([v for v in F.values()])
 
+class CustomMutation(Mutation):
+
+    def __init__(self, probability : float =0.1):
+        super().__init__()
+        self.probability = probability
+
+    def _do(self, problem : LandUseProblem, X, **kwargs):
+        # Create random perturbation
+        print(X)
+        blocks_gdf = problem.blocks_gdf
+        def mutate(i,x):
+            probabilities = blocks_gdf.iloc[i]['probabilities']
+            if random.random()<=self.probability:
+                x = random.choices(list(probabilities.keys()), list(probabilities.values()),k=1)[0]
+                x = problem.land_use.index(x)
+            return x
+        
+        X = np.array([[mutate(i,x) for i,x in enumerate(solution)] for solution in X])
+        return X 
+
 class PymooOptimizer():
     
     def __init__(self, model : Model):
@@ -165,6 +188,7 @@ class PymooOptimizer():
         if opt_alg == OptimizationAlgorithm.NSGA2:
             algorithm = NSGA2(
                 pop_size=10,
+                mutation = CustomMutation(probability=0.1)
             )
         elif opt_alg == OptimizationAlgorithm.BRKGA:
             algorithm = BRKGA(
