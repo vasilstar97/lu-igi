@@ -15,7 +15,7 @@ NUM_GENERATIONS = 1000
 SOL_PER_POP = 100
 TITLES = ['LU shares (least squares)', 'Probability', 'Adjacency penalty', 'Area penalty', 'Ratio penalty']
 
-class Optimizer():
+class PygadOptimizer():
 
     def __init__(self, model : Model):        
         self.model = model

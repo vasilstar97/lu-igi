@@ -1,6 +1,8 @@
 import shapely
 import geopandas as gpd
 import networkx as nx
+from .tolerance_matrix import TOLERANCE_MATRIX
+from .land_use import LandUse
 
 BORDER_LENGTH_NAME = 'border_length'
 ASPECT_RATIO_NAME = 'aspect_ratio'
@@ -10,8 +12,9 @@ AREA_NAME = 'area'
 class Model():
 
     def __init__(self, blocks_gdf):
-        self.blocks_gdf = self._preprocess_blocks(blocks_gdf)
+        blocks_gdf = self._preprocess_blocks(blocks_gdf)
         self.adjacency_graph = self._get_adjacency_graph(blocks_gdf)
+        self.blocks_gdf = self._process_probabilities(blocks_gdf)
 
     @property
     def crs(self):
@@ -51,6 +54,35 @@ class Model():
         blocks_gdf = blocks_gdf[['geometry', LAND_USE_NAME]].copy()
         blocks_gdf[AREA_NAME] = blocks_gdf.area
         blocks_gdf[ASPECT_RATIO_NAME] = blocks_gdf.geometry.apply(cls._get_aspect_ratio)
+        return blocks_gdf
+    
+    def _process_probabilities(self, blocks_gdf : gpd.GeoDataFrame):
+        blocks_gdf = blocks_gdf.copy()
+
+        def get_weight(a,b):
+            lu_a = blocks_gdf.loc[a]['land_use']
+            lu_b = blocks_gdf.loc[b]['land_use']
+            if lu_b is None:
+                return 0
+            if lu_a is None:
+                return 1/len(list(LandUse))
+            tolerance = TOLERANCE_MATRIX.loc[lu_a, lu_b]
+            border_length = self.adjacency_graph.get_edge_data(a,b)['border_length']
+            return tolerance * border_length
+        
+        def get_probabilities(series):
+            a = series.name
+            weights = [(blocks_gdf.loc[b,LAND_USE_NAME], get_weight(a,b)) for b in self.adjacency_graph.neighbors(a)]
+            weights = [(lu, w) for lu, w in weights if w>0]
+            lus_weights = {lu : 0 for lu in list(LandUse)}
+            for lu,w in weights:
+                lus_weights[lu] += w
+            weights_sum = sum(lus_weights.values())
+            if weights_sum > 0:
+                return {lu : float(w / weights_sum) for lu, w in lus_weights.items()}
+            return {blocks_gdf.loc[a,LAND_USE_NAME] : 1.0}
+        
+        blocks_gdf['probabilities'] = blocks_gdf.apply(get_probabilities, axis=1)
         return blocks_gdf
         
     @staticmethod
