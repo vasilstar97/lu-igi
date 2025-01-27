@@ -20,8 +20,9 @@ TITLES = ['LU shares (least squares)', 'Probability', 'Adjacency penalty', 'Area
 
 class PygadOptimizer():
 
-    def __init__(self, model : Model):        
-        self.model = model
+    def __init__(self, blocks_gdf : gpd.GeoDataFrame, adjacency_graph : nx.Graph):        
+        self.blocks_gdf = blocks_gdf
+        self.adjacency_graph = adjacency_graph
 
     @staticmethod
     def plot_fitness(ga_instance : pg.GA, titles : list[str] = TITLES):
@@ -38,19 +39,19 @@ class PygadOptimizer():
         plt.show()
 
     def _get_blocks_subgdf(self, territory_gdf : gpd.GeoDataFrame):
-        if not territory_gdf.crs == self.model.crs:
+        if not territory_gdf.crs == self.blocks_gdf.crs:
             logger.warning('Territory must have same CRS as model blocks. Assigning')
-            territory_gdf = territory_gdf.to_crs(self.model.crs)
-        blocks_gdf = self.model.blocks_gdf.copy()
+            territory_gdf = territory_gdf.to_crs(self.blocks_gdf.crs)
+        blocks_gdf = self.blocks_gdf.copy()
         return blocks_gdf[blocks_gdf.intersects(territory_gdf.union_all())]
     
     def _get_adjacency_subgraph(self, blocks_subgdf : gpd.GeoDataFrame):
-        adjacency_graph = self.model.adjacency_graph
+        adjacency_graph = self.adjacency_graph
         nodes = {node for block_i in blocks_subgdf.index for node in adjacency_graph.neighbors(block_i)}
         return adjacency_graph.subgraph(nodes)
     
     def _get_adjacency_penalty(self, blocks_subgdf : gpd.GeoDataFrame, adjacency_subgraph : nx.Graph) -> float:
-        blocks_gdf = self.model.blocks_gdf
+        blocks_gdf = self.blocks_gdf
         penalty = 0
 
         for u,v,d in adjacency_subgraph.edges(data=True):
@@ -99,11 +100,7 @@ class PygadOptimizer():
     
     def _get_transition_probability(self, blocks_gdf : gpd.GeoDataFrame) -> float:
         blocks_gdf['probability'] = blocks_gdf.apply(lambda s : s['probabilities'].get(s['assigned_land_use']), axis=1)
-        # blocks_gdf['probability'] = blocks_gdf.apply(lambda s : TRANSITION_MATRIX.loc[s['land_use'], s['assigned_land_use']], axis=1)
-        # return blocks_gdf['probability'].sum()
         return np.prod(blocks_gdf['probability'])
-        # return reduce(lambda a,b : a*b, [p*10_000 for p in blocks_gdf['probability']])
-        # return np.sum([np.log(p) for p in blocks_gdf['probability']])
     
     def _get_share_least_squares(self, blocks_gdf : gpd.GeoDataFrame, target_lu_shares : dict[LandUse, float]) -> float:
         area = blocks_gdf.area.sum() # TODO overall or only territory ?
