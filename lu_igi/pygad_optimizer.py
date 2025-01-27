@@ -131,6 +131,7 @@ class PygadOptimizer():
             area_penalty = self._get_area_penalty(gdf)
             ratio_penalty = self._get_ratio_penalty(gdf)
 
+            # return probability
             return 1/share_ls, probability, 1/adjacency_penalty, 1/area_penalty, 1/ratio_penalty
 
         gene_space = [i for i,_ in enumerate(land_use)]
@@ -140,7 +141,8 @@ class PygadOptimizer():
             for j in range(offspring.shape[1]):  # Перебираем потомков
                 probabilities = blocks_gdf.iloc[j]['probabilities']
                 for i in range(offspring.shape[0]):
-                    if random.random()<=mutation_probability:
+                    random_value = random.random()
+                    if random_value<=mutation_probability:
                         lu = random.choices(list(probabilities.keys()), list(probabilities.values()),k=1)[0]
                         offspring[i,j] = land_use.index(lu)
         
