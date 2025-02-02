@@ -21,8 +21,26 @@ TITLES = ['LU shares (least squares)', 'Probability', 'Adjacency penalty', 'Area
 class PygadOptimizer():
 
     def __init__(self, blocks_gdf : gpd.GeoDataFrame, adjacency_graph : nx.Graph):        
-        self.blocks_gdf = blocks_gdf
+        self.blocks_gdf = self._preprocess_blocks_gdf(blocks_gdf)
         self.adjacency_graph = adjacency_graph
+
+    def _preprocess_blocks_gdf(self, blocks_gdf : gpd.GeoDataFrame):
+        blocks_gdf = blocks_gdf.copy()
+
+        def update_probabilities(series : gpd.GeoSeries):
+            current_lu = series['land_use']
+            probabilities = series['probabilities'].copy()
+
+            if current_lu is None:
+                return probabilities
+
+            for prob_lu, p in probabilities.items():
+                probabilities[prob_lu] = p * TRANSITION_MATRIX.loc[current_lu, prob_lu]
+            probabilities_sum = sum(probabilities.values())
+            return {lu : p / probabilities_sum for lu, p in probabilities.items()}
+
+        blocks_gdf['probabilities'] = blocks_gdf.apply(update_probabilities, axis=1)
+        return blocks_gdf
 
     @staticmethod
     def plot_fitness(ga_instance : pg.GA, titles : list[str] = TITLES):
