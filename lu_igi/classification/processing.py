@@ -129,37 +129,56 @@ def generate_adjacency_edges(blocks_gdf : gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     edges_gdf['geometry'] = edges_gdf.progress_apply(get_intersection_geometry, axis=1)
     return edges_gdf.set_index([SOURCE_COLUMN, TARGET_COLUMN])
 
-def generate_edges_features(edges_gdf : gpd.GeoDataFrame, blocks_gdf : gpd.GeoDataFrame) -> pd.DataFrame:
+def generate_edges_features(edges_gdf : gpd.GeoDataFrame) -> pd.DataFrame:
     logger.info('Generating edges features')
     edges_gdf = edges_gdf.copy()
     edges_gdf[BORDER_LENGTH_COLUMN] = edges_gdf.geometry.progress_apply(lambda g : g.length)
     return edges_gdf[[BORDER_LENGTH_COLUMN]]
 
-def create_adjacency_graph(blocks_gdf : gpd.GeoDataFrame, combinations : bool = True) -> nx.DiGraph:
+def create_adjacency_graph(blocks_gdf : gpd.GeoDataFrame) -> nx.DiGraph:
     
     logger.info('Validating input')
     blocks_gdf = BlocksSchema(blocks_gdf)
 
     blocks_df = generate_node_features(blocks_gdf)
-    if combinations:
-        blocks_df = generate_combinations(blocks_df)
-    node_features = list(blocks_df.columns)
-    blocks_df['land_use'] = blocks_gdf.land_use
+    blocks_gdf = pd.concat([blocks_gdf, blocks_df], axis=1)
 
     adj_graph = nx.DiGraph()
-    adj_graph.add_nodes_from([(i, row.to_dict()) for i,row in blocks_df.iterrows()])
+    adj_graph.add_nodes_from([(i, row.to_dict()) for i,row in blocks_gdf.iterrows()])
 
     edges_gdf = generate_adjacency_edges(blocks_gdf)
     edges_gdf = generate_edges_features(edges_gdf, blocks_gdf)
-    edge_features = list(edges_gdf.columns)
     
     adj_graph.add_edges_from([(i[0], i[1], row.to_dict()) for i,row in edges_gdf.iterrows()])
 
     logger.success('Graph successfully generated')
-    return adj_graph, node_features, edge_features
+    return adj_graph #, node_features, edge_features
 
-def graph_to_data(graph : nx.DiGraph, node_features : list[str], edge_features : list[str]) -> Data:
-    data = from_networkx(graph, group_node_attrs=filter(lambda f : f != LAND_USE_COLUMN, node_features), group_edge_attrs=edge_features)
-    data.y = torch.tensor([-1 if lu is None else CLASSES.index(lu) for lu in data[LAND_USE_COLUMN]]).long()
-    data.remove_tensor(LAND_USE_COLUMN)
+# def create_adjacency_graph(blocks_gdf : gpd.GeoDataFrame, combinations : bool = True) -> nx.DiGraph:
+    
+#     logger.info('Validating input')
+#     blocks_gdf = BlocksSchema(blocks_gdf)
+
+#     blocks_df = generate_node_features(blocks_gdf)
+#     if combinations:
+#         blocks_df = generate_combinations(blocks_df)
+#     node_features = list(blocks_df.columns)
+#     blocks_df['land_use'] = blocks_gdf.land_use
+
+#     adj_graph = nx.DiGraph()
+#     adj_graph.add_nodes_from([(i, row.to_dict()) for i,row in blocks_df.iterrows()])
+
+#     edges_gdf = generate_adjacency_edges(blocks_gdf)
+#     edges_gdf = generate_edges_features(edges_gdf, blocks_gdf)
+#     edge_features = list(edges_gdf.columns)
+    
+#     adj_graph.add_edges_from([(i[0], i[1], row.to_dict()) for i,row in edges_gdf.iterrows()])
+
+#     logger.success('Graph successfully generated')
+#     return adj_graph, node_features, edge_features
+
+def graph_to_data(graph : nx.DiGraph, node_features : list[str], edge_features : list[str], target_feature : str = LAND_USE_COLUMN) -> Data:
+    data = from_networkx(graph, group_node_attrs=filter(lambda f : f != target_feature, node_features), group_edge_attrs=edge_features)
+    data.y = torch.tensor([-1 if lu is None else CLASSES.index(lu) for lu in data[target_feature]]).long()
+    data.remove_tensor(target_feature)
     return data
