@@ -17,7 +17,6 @@ dependencies = [ # здесь необходимо вести все устан�
     "geopandas>=0.13.0,<1.0.0",
     "networkx",
     "osmnx",
-    "pygad",
     "pyarrow",
     "tqdm",
     "loguru",
