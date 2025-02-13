@@ -1,6 +1,6 @@
 import random
 import numpy as np
-from .problem import Problem, TRANSITION_PROBABILITIES_KEY
+from .problem import Problem, TRANSITION_WEIGHTS_KEY
 from pymoo.core.mutation import Mutation as PymooMutation
 
 class Mutation(PymooMutation):
@@ -10,7 +10,7 @@ class Mutation(PymooMutation):
         self.probability = probability
 
     def _mutate_variable(self,i,value,problem):
-        probabilities = problem.graph.nodes[problem.get_node(i)][TRANSITION_PROBABILITIES_KEY]
+        probabilities = problem.graph.nodes[problem.get_node(i)][TRANSITION_WEIGHTS_KEY]
         if random.random()<=self.probability:
             value = random.choices(list(probabilities.keys()), list(probabilities.values()),k=1)[0]
         return value

@@ -3,6 +3,8 @@ import pandas as pd
 from ..models.land_use import LandUse
 # Список значений LandUse
 
+PROBABILITY_THRESHOLD = 0.01
+
 # Определение вероятностей переходов вручную (пример с предположениями)
 transition_probabilities = {
     LandUse.RESIDENTIAL: [0.7, 0.15, 0.02, 0.03, 0.05, 0.03, 0.02],
@@ -15,4 +17,5 @@ transition_probabilities = {
 }
 
 # Создание DataFrame
-TRANSITION_MATRIX = pd.DataFrame(transition_probabilities, index=list(LandUse), columns=list(LandUse)).transpose()
+PROBABILITY_MATRIX = pd.DataFrame(transition_probabilities, index=list(LandUse), columns=list(LandUse)).transpose()
+POSSIBILITY_MATRIX = PROBABILITY_MATRIX > PROBABILITY_THRESHOLD

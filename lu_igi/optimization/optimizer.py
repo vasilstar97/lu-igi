@@ -1,13 +1,14 @@
 import networkx as nx
 import numpy as np
 import geopandas as gpd
+import pandas as pd
 from tqdm import tqdm
 from pymoo.core.population import Population
 from pymoo.termination import get_termination
 from pymoo.algorithms.moo.nsga2 import NSGA2
 from pymoo.optimize import minimize
 from .rules import ADJACENCY_RULES_GRAPH
-from .transition_matrix import TRANSITION_MATRIX
+from .transition_matrices import POSSIBILITY_MATRIX
 from .mutation import Mutation
 from .problem import (
     Problem, 
@@ -15,7 +16,7 @@ from .problem import (
     LAND_USE_KEY,
     AREA_KEY, 
     RATIO_KEY, 
-    TRANSITION_PROBABILITIES_KEY, 
+    TRANSITION_WEIGHTS_KEY, 
     LENGTH_KEY,
 )
 from ..models.land_use import LandUse
@@ -76,9 +77,9 @@ class Optimizer():
             data[LAND_USE_KEY] = None if land_use is None else LAND_USE.index(land_use)
 
             if land_use is None:
-                data[TRANSITION_PROBABILITIES_KEY] = {LAND_USE.index(lu) : 1/len(list(LandUse)) for lu in list(LandUse)}
+                data[TRANSITION_WEIGHTS_KEY] = {LAND_USE.index(lu) : 1/len(list(LandUse)) for lu in list(LandUse)}
             else:
-                data[TRANSITION_PROBABILITIES_KEY] = {LAND_USE.index(lu) : TRANSITION_MATRIX.loc[land_use, lu] for lu in list(LandUse)}
+                data[TRANSITION_WEIGHTS_KEY] = {LAND_USE.index(lu) : 1 if POSSIBILITY_MATRIX.loc[land_use, lu] else 0 for lu in list(LandUse)}
 
         for u,v,data in tqdm(graph.edges(data=True)):
             geometry = data[GEOMETRY_KEY]
@@ -94,6 +95,9 @@ class Optimizer():
     def _generate_initial_population(self, problem : Problem, population_size : int):
         return Population.new(X=[self._generate_initial_solution(problem) for _ in range(population_size)])
     
+    def _result_to_df(self, result, population_size : int) -> pd.DataFrame:
+        ...
+
     def run(
             self, 
             blocks_ids : list[int],
@@ -117,15 +121,16 @@ class Optimizer():
             mutation = mutation
         )
 
-        return minimize(
+        res = minimize(
             problem,
             algorithm,
             termination,
             seed=seed,
-            # save_history=True,
             verbose=verbose,
             X=initial_population
         )
+
+        return res
 
 
 

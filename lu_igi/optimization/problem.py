@@ -7,14 +7,22 @@ LAND_USE_KEY = 'land_use'
 AREA_KEY = 'area'
 RATIO_KEY = 'ratio'
 LENGTH_KEY = 'length'
-TRANSITION_PROBABILITIES_KEY = 'transition_probabilities'
+TRANSITION_WEIGHTS_KEY = 'transition_weights'
 
 class FitnessType(Enum):
     PROBABILITY = 'Вероятность перехода'
-    SHARE_MSE = 'Желаемое соотношение классов'
-    ADJACENCY_PENALTY = 'Штраф за соседство'
-    AREA_PENALTY = 'Штраф за площадь'
-    RATIO_PENALTY = 'Штраф за соотношение сторон'
+    SHARE_MSE = 'Близость к целевому состоянию'
+    ADJACENCY_PENALTY = 'Конфликт размещения функциональных зон'
+
+class OptimizationType(Enum):
+    MAXIMIZE = 'Максимизация'
+    MINIMIZE = 'Минимизация'
+
+FITNESS_OPTIMIZATION_TYPES = {
+    FitnessType.PROBABILITY : OptimizationType.MAXIMIZE,
+    FitnessType.SHARE_MSE : OptimizationType.MINIMIZE,
+    FitnessType.ADJACENCY_PENALTY : OptimizationType.MINIMIZE
+}
 
 class Problem(PymooProblem):
 
@@ -58,7 +66,7 @@ class Problem(PymooProblem):
     def _get_transition_probability(self, i, v):
         node = self.get_node(i)
         v = round(v)
-        return self.graph.nodes[node][TRANSITION_PROBABILITIES_KEY][v]
+        return self.graph.nodes[node][TRANSITION_WEIGHTS_KEY][v] * self.graph.nodes[node][AREA_KEY]
 
     def _evaluate_probability(self, solution) -> float:
         probabilities = [self._get_transition_probability(i,v) for i,v in enumerate(solution)]
@@ -78,20 +86,23 @@ class Problem(PymooProblem):
             
             if u_cls is not None and v_cls is not None:
                 if not self.adjacency_rules_graph.has_edge(u_cls, v_cls):
-                    return d[LENGTH_KEY]
+                    return self.graph.nodes[u][AREA_KEY] * self.graph.nodes[v][AREA_KEY]
             return 0
 
         return sum([penalty(u,v,d) for u,v,d in self.graph.edges(data=True) if u in self.nodes or v in self.nodes])
 
     
     def _get_fitness(self, fitness_type, solution):
+        fitness_value = 0
         if fitness_type == FitnessType.PROBABILITY:
-            return -self._evaluate_probability(solution)
+            fitness_value = self._evaluate_probability(solution)
         if fitness_type == FitnessType.SHARE_MSE:
-            return self._evaluate_share_mse(solution)
+            fitness_value = self._evaluate_share_mse(solution)
         if fitness_type == FitnessType.ADJACENCY_PENALTY:
-            return self._evaluate_adjacency_penalty(solution)
-        return 0
+            fitness_value = self._evaluate_adjacency_penalty(solution)
+        if FITNESS_OPTIMIZATION_TYPES[fitness_type] == OptimizationType.MAXIMIZE:
+            fitness_value *= -1
+        return fitness_value
 
     def _get_fitnesses(self, solution):
         return {fitness_type : self._get_fitness(fitness_type, solution) for fitness_type in self.fitness_types}
