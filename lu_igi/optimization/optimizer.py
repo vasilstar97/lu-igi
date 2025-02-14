@@ -13,6 +13,8 @@ from .mutation import Mutation
 from .problem import (
     Problem, 
     FitnessType,
+    OptimizationType,
+    OPTIMIZATION_TYPES,
     LAND_USE_KEY,
     AREA_KEY, 
     RATIO_KEY, 
@@ -21,11 +23,14 @@ from .problem import (
 )
 from ..models.land_use import LandUse
 
-GEOMETRY_KEY = 'geometry'
-
 LAND_USE = list(LandUse)
 
+GEOMETRY_KEY = 'geometry'
+SOLUTION_COLUMN = 'solution'
+FITNESS_COLUMN = 'fitness'
 ASSIGNED_LAND_USE_KEY = 'assigned_land_use'
+GDF_KEY = 'gdf'
+
 N_EVAL = 1000
 POPULATION_SIZE = 10
 MUTATION_PROBABILITY = 0.1
@@ -35,18 +40,6 @@ class Optimizer():
 
     def __init__(self, graph : nx.DiGraph):
         self.graph = self._preprocess_graph(graph)
-
-    def best_solutions(self, results, fitness_types : list[FitnessType]):
-        solutions = results.X
-        fitnesses = results.F
-        best = {}
-        for j, fitness_type in enumerate(fitness_types):
-            min_i = min([i for i,_ in enumerate(solutions)], key = lambda i : fitnesses[i][j])
-            best[fitness_type] = {
-                'X': solutions[min_i],
-                'f': fitnesses[min_i][j]
-            }
-        return best
 
     def to_gdf(self, solution, blocks_ids : list[int], crs = None):
         if crs is None:
@@ -77,7 +70,7 @@ class Optimizer():
             data[LAND_USE_KEY] = None if land_use is None else LAND_USE.index(land_use)
 
             if land_use is None:
-                data[TRANSITION_WEIGHTS_KEY] = {LAND_USE.index(lu) : 1/len(list(LandUse)) for lu in list(LandUse)}
+                data[TRANSITION_WEIGHTS_KEY] = {LAND_USE.index(lu) : 1 for lu in list(LandUse)}
             else:
                 data[TRANSITION_WEIGHTS_KEY] = {LAND_USE.index(lu) : 1 if POSSIBILITY_MATRIX.loc[land_use, lu] else 0 for lu in list(LandUse)}
 
@@ -95,14 +88,55 @@ class Optimizer():
     def _generate_initial_population(self, problem : Problem, population_size : int):
         return Population.new(X=[self._generate_initial_solution(problem) for _ in range(population_size)])
     
-    def _result_to_df(self, result, population_size : int) -> pd.DataFrame:
-        ...
+    def expand_result_df(self, result_df : pd.DataFrame, crs = None) -> list[dict]:
+        if crs is None:
+            assert 'crs' in self.graph.graph, 'CRS should be provided either in graph or as param'
+            crs = self.graph.graph['crs']
+
+        result = []
+        for i,row in result_df.iterrows():
+            row_dict = {ft.value : row[ft.value] for ft in list(FitnessType)}
+            land_use_dict = row[ASSIGNED_LAND_USE_KEY]
+            blocks_ids = land_use_dict.keys()
+            # data = [{self.graph.nodes[block_id],} for block_id in blocks_ids]
+            df = pd.DataFrame.from_dict(land_use_dict, orient='index', columns=[ASSIGNED_LAND_USE_KEY])
+            gdf = gpd.GeoDataFrame([{'id': block_id, 'geometry': self.graph.nodes[block_id][GEOMETRY_KEY]} for block_id in blocks_ids], crs=crs)
+            gdf = gdf.set_crs(crs).set_index('id', drop=True)
+            gdf = pd.concat([gdf, df], axis=1)
+            row_dict[GDF_KEY] = gdf
+            # gdf[LAND_USE_KEY] = gdf[LAND_USE_KEY].apply(lambda lu : None if lu is None or np.isnan(lu) else list(LandUse)[round(lu)])
+            # gdf[ASSIGNED_LAND_USE_KEY] = [LAND_USE[round(v)] for v in solution]
+            result.append(row_dict)
+        return result
+
+    def result_to_df(self, result, blocks_ids) -> pd.DataFrame:
+        data = {
+            SOLUTION_COLUMN : list(result.X),
+            FITNESS_COLUMN : list(result.F)
+        }
+        df = pd.DataFrame.from_dict(data)
+        
+        def explain_solution(solution):
+            res = {}
+            for i,v in enumerate(solution):
+                v = round(v)
+                lu = LAND_USE[v]
+                block_id = blocks_ids[i]
+                res[block_id] = lu
+            return res            
+
+        df[ASSIGNED_LAND_USE_KEY] = df[SOLUTION_COLUMN].apply(explain_solution)
+
+        for i,fitness_type in enumerate(FitnessType):
+            k = -1 if OPTIMIZATION_TYPES[fitness_type] == OptimizationType.MAXIMIZE else 1
+            df[fitness_type.value] = df[FITNESS_COLUMN].apply(lambda f : k * f[i])
+
+        return df.sort_values(FitnessType.SHARE_MSE.value)
 
     def run(
             self, 
             blocks_ids : list[int],
             target_lu_shares,
-            fitness_types : list[FitnessType] = list(FitnessType),
             n_eval : int = N_EVAL,
             population_size : int = POPULATION_SIZE,
             mutation_probability : float = MUTATION_PROBABILITY,
@@ -112,7 +146,7 @@ class Optimizer():
         
         target_lu_shares = {LAND_USE.index(lu):share for lu,share in target_lu_shares.items()}
 
-        problem = Problem(self.graph, blocks_ids, target_lu_shares, len(LAND_USE), fitness_types, adjacency_rules_graph=nx.relabel_nodes(ADJACENCY_RULES_GRAPH, LAND_USE.index))
+        problem = Problem(self.graph, blocks_ids, target_lu_shares, len(LAND_USE), adjacency_rules_graph=nx.relabel_nodes(ADJACENCY_RULES_GRAPH, LAND_USE.index))
         initial_population = self._generate_initial_population(problem, population_size)
         mutation = Mutation(mutation_probability)
         termination = get_termination("n_eval", n_eval)
@@ -121,7 +155,7 @@ class Optimizer():
             mutation = mutation
         )
 
-        res = minimize(
+        result = minimize(
             problem,
             algorithm,
             termination,
@@ -130,7 +164,7 @@ class Optimizer():
             X=initial_population
         )
 
-        return res
+        return self.result_to_df(result, blocks_ids)
 
 
 

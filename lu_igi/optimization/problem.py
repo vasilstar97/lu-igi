@@ -10,17 +10,17 @@ LENGTH_KEY = 'length'
 TRANSITION_WEIGHTS_KEY = 'transition_weights'
 
 class FitnessType(Enum):
-    PROBABILITY = 'Вероятность перехода'
     SHARE_MSE = 'Близость к целевому состоянию'
+    TRANSITION = 'Риск дорогой ревитализации'
     ADJACENCY_PENALTY = 'Конфликт размещения функциональных зон'
 
 class OptimizationType(Enum):
     MAXIMIZE = 'Максимизация'
     MINIMIZE = 'Минимизация'
 
-FITNESS_OPTIMIZATION_TYPES = {
-    FitnessType.PROBABILITY : OptimizationType.MAXIMIZE,
+OPTIMIZATION_TYPES = {
     FitnessType.SHARE_MSE : OptimizationType.MINIMIZE,
+    FitnessType.TRANSITION : OptimizationType.MINIMIZE,
     FitnessType.ADJACENCY_PENALTY : OptimizationType.MINIMIZE
 }
 
@@ -32,17 +32,15 @@ class Problem(PymooProblem):
             nodes : list[int], 
             target_shares : dict[int, float], 
             num_classes : int, 
-            fitness_types : list[FitnessType],
             adjacency_rules_graph : nx.Graph,
         ):     
         self.graph = graph
         self.nodes = nodes
         self.target_shares = target_shares
-        self.fitness_types = fitness_types
         self.adjacency_rules_graph = adjacency_rules_graph
         super().__init__(
             n_var=len(self.nodes),
-            n_obj=len(fitness_types),
+            n_obj=len(FitnessType),
             n_constr=0,
             xl=0,
             xu=num_classes-1,
@@ -63,14 +61,15 @@ class Problem(PymooProblem):
             deviations.append(deviation)
         return sum(deviations)
 
-    def _get_transition_probability(self, i, v):
+    def _get_transition_area(self, i, v):
         node = self.get_node(i)
         v = round(v)
         return self.graph.nodes[node][TRANSITION_WEIGHTS_KEY][v] * self.graph.nodes[node][AREA_KEY]
 
-    def _evaluate_probability(self, solution) -> float:
-        probabilities = [self._get_transition_probability(i,v) for i,v in enumerate(solution)]
-        return np.prod(probabilities)
+    def _evaluate_transition(self, solution) -> float:
+        transition_areas = [self._get_transition_area(i,v) for i,v in enumerate(solution)]
+        areas = [self.graph.nodes[n][AREA_KEY] for n in self.nodes]
+        return 1 - (np.sum(transition_areas) / np.sum(areas))
     
     def _evaluate_adjacency_penalty(self, solution) -> float:
 
@@ -94,22 +93,22 @@ class Problem(PymooProblem):
     
     def _get_fitness(self, fitness_type, solution):
         fitness_value = 0
-        if fitness_type == FitnessType.PROBABILITY:
-            fitness_value = self._evaluate_probability(solution)
+        if fitness_type == FitnessType.TRANSITION:
+            fitness_value = self._evaluate_transition(solution)
         if fitness_type == FitnessType.SHARE_MSE:
             fitness_value = self._evaluate_share_mse(solution)
         if fitness_type == FitnessType.ADJACENCY_PENALTY:
             fitness_value = self._evaluate_adjacency_penalty(solution)
-        if FITNESS_OPTIMIZATION_TYPES[fitness_type] == OptimizationType.MAXIMIZE:
+        if OPTIMIZATION_TYPES[fitness_type] == OptimizationType.MAXIMIZE:
             fitness_value *= -1
         return fitness_value
 
     def _get_fitnesses(self, solution):
-        return {fitness_type : self._get_fitness(fitness_type, solution) for fitness_type in self.fitness_types}
+        return {fitness_type : self._get_fitness(fitness_type, solution) for fitness_type in list(FitnessType)}
     
     def _evaluate(self, solutions, out, *args, **kwargs):
 
-        solutions_fitnesses = {fitness_type : [] for fitness_type in self.fitness_types}
+        solutions_fitnesses = {fitness_type : [] for fitness_type in list(FitnessType)}
 
         for solution in solutions:
 
