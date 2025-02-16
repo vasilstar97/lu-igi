@@ -78,7 +78,7 @@ class Problem(PymooProblem):
     def _evaluate_adjacency_penalty(self, solution) -> float:
 
 
-        def penalty(u,v,d):
+        def penalty(u,v):
             if u in self.nodes:
                 u_cls = solution[self.nodes.index(u)]
             else:
@@ -93,8 +93,8 @@ class Problem(PymooProblem):
                     return self.graph.nodes[u][AREA_KEY] * self.graph.nodes[v][AREA_KEY]
             return 0
         
-        max_penalty = np.sum([self.graph.nodes[u][AREA_KEY] * self.graph.nodes[v][AREA_KEY] for u,v,d in self.graph.edges(data=True)])
-        cur_penalty = np.sum([penalty(u,v,d) for u,v,d in self.graph.edges(data=True)])
+        max_penalty = np.sum([self.graph.nodes[u][AREA_KEY] * self.graph.nodes[v][AREA_KEY] for u,v in self.graph.edges if u in self.nodes or v in self.nodes])
+        cur_penalty = np.sum([penalty(u,v) for u,v in self.graph.edges if u in self.nodes or v in self.nodes])
 
         return cur_penalty/max_penalty
     
