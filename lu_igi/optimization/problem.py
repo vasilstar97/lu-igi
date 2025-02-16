@@ -34,7 +34,7 @@ class Problem(PymooProblem):
             num_classes : int, 
             adjacency_rules_graph : nx.Graph,
         ):     
-        self.graph = graph
+        self.graph = self._get_subgraph(graph, nodes)
         self.nodes = nodes
         self.target_shares = target_shares
         self.adjacency_rules_graph = adjacency_rules_graph
@@ -46,6 +46,10 @@ class Problem(PymooProblem):
             xu=num_classes-1,
             type_var=int # Дискретные переменные (метки)
         )
+
+    def _get_subgraph(self, graph, nodes) -> nx.Graph:
+        subgraph_nodes = {n_node for node in nodes for n_node in graph.neighbors(node)}
+        return graph.subgraph(subgraph_nodes)
 
     def get_node(self, i):
         return self.nodes[i]
@@ -73,6 +77,7 @@ class Problem(PymooProblem):
     
     def _evaluate_adjacency_penalty(self, solution) -> float:
 
+
         def penalty(u,v,d):
             if u in self.nodes:
                 u_cls = solution[self.nodes.index(u)]
@@ -87,9 +92,11 @@ class Problem(PymooProblem):
                 if not self.adjacency_rules_graph.has_edge(u_cls, v_cls):
                     return self.graph.nodes[u][AREA_KEY] * self.graph.nodes[v][AREA_KEY]
             return 0
+        
+        max_penalty = np.sum([self.graph.nodes[u][AREA_KEY] * self.graph.nodes[v][AREA_KEY] for u,v,d in self.graph.edges(data=True)])
+        cur_penalty = np.sum([penalty(u,v,d) for u,v,d in self.graph.edges(data=True)])
 
-        return sum([penalty(u,v,d) for u,v,d in self.graph.edges(data=True) if u in self.nodes or v in self.nodes])
-
+        return cur_penalty/max_penalty
     
     def _get_fitness(self, fitness_type, solution):
         fitness_value = 0

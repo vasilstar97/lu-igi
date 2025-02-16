@@ -40,22 +40,10 @@ class Optimizer():
 
     def __init__(self, graph : nx.DiGraph):
         self.graph = self._preprocess_graph(graph)
-
-    def to_gdf(self, solution, blocks_ids : list[int], crs = None):
-        if crs is None:
-            assert 'crs' in self.graph.graph, 'CRS should be provided either in graph or as param'
-            crs = self.graph.graph['crs']
-
-        data = [self.graph.nodes[block_id] for block_id in blocks_ids]
-        gdf = gpd.GeoDataFrame(data, crs=crs)
-        gdf[LAND_USE_KEY] = gdf[LAND_USE_KEY].apply(lambda lu : None if lu is None or np.isnan(lu) else list(LandUse)[round(lu)])
-        gdf[ASSIGNED_LAND_USE_KEY] = [LAND_USE[round(v)] for v in solution]
-        return gdf
     
-    def plot(self, gdf : gpd.GeoDataFrame, title : str = 'Визуализация', *args, **kwargs):
+    def plot(self, gdf : gpd.GeoDataFrame, *args, **kwargs):
         ax = gdf.plot(column=ASSIGNED_LAND_USE_KEY, legend=True, *args, **kwargs)
         ax.set_axis_off()
-        ax.set_title(title)
 
     @staticmethod
     def _preprocess_graph(graph):
@@ -100,9 +88,12 @@ class Optimizer():
             blocks_ids = land_use_dict.keys()
             # data = [{self.graph.nodes[block_id],} for block_id in blocks_ids]
             df = pd.DataFrame.from_dict(land_use_dict, orient='index', columns=[ASSIGNED_LAND_USE_KEY])
+            df[LAND_USE_KEY] = [self.graph.nodes[i][LAND_USE_KEY] for i in df.index]
+            df[LAND_USE_KEY] = df[LAND_USE_KEY].apply(lambda lu : None if np.isnan(lu) else LAND_USE[int(lu)])
+
             gdf = gpd.GeoDataFrame([{'id': block_id, 'geometry': self.graph.nodes[block_id][GEOMETRY_KEY]} for block_id in blocks_ids], crs=crs)
             gdf = gdf.set_crs(crs).set_index('id', drop=True)
-            gdf = pd.concat([gdf, df], axis=1)
+            gdf = pd.concat([gdf, df[[LAND_USE_KEY, ASSIGNED_LAND_USE_KEY]]], axis=1)
             row_dict[GDF_KEY] = gdf
             # gdf[LAND_USE_KEY] = gdf[LAND_USE_KEY].apply(lambda lu : None if lu is None or np.isnan(lu) else list(LandUse)[round(lu)])
             # gdf[ASSIGNED_LAND_USE_KEY] = [LAND_USE[round(v)] for v in solution]

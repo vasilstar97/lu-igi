@@ -13,7 +13,7 @@ class BlocksSchema(BaseSchema):
 
 class ZonesSchema(BaseSchema):
     _geom_types = [shapely.Polygon, shapely.MultiPolygon]
-    zone : Series[str]
+    zone : Series
 
 def _validate_input(blocks : gpd.GeoDataFrame, zones : gpd.GeoDataFrame) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
     logger.info('Validating input')
