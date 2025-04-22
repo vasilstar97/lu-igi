@@ -43,7 +43,9 @@ class BlocksSchema(BaseSchema):
 
     #     return series.apply(check)
 
-def _generate_adjacency_edges(blocks_gdf : gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+def _generate_adjacency_edges(blocks_gdf : gpd.GeoDataFrame, buffer_size : int) -> gpd.GeoDataFrame:
+    blocks_gdf = blocks_gdf.copy()
+    blocks_gdf.geometry = blocks_gdf.geometry.buffer(buffer_size)
     logger.info('Generating edges')
     edges_gdf = blocks_gdf.sjoin(blocks_gdf, predicate='intersects')[['geometry', 'index_right']]
     edges_gdf = edges_gdf[edges_gdf.index != edges_gdf['index_right']]
@@ -57,10 +59,12 @@ def _generate_adjacency_edges(blocks_gdf : gpd.GeoDataFrame) -> gpd.GeoDataFrame
         target_geom = blocks_gdf.loc[series[TARGET_COLUMN], 'geometry']
         return source_geom.intersection(target_geom)
 
-    edges_gdf['geometry'] = edges_gdf.progress_apply(get_intersection_geometry, axis=1)
+    if len(edges_gdf) > 0:
+        edges_gdf['geometry'] = edges_gdf.progress_apply(get_intersection_geometry, axis=1)
+        
     return edges_gdf.set_index([SOURCE_COLUMN, TARGET_COLUMN])
 
-def generate_adjacency_graph(blocks_gdf : gpd.GeoDataFrame) -> nx.DiGraph:
+def generate_adjacency_graph(blocks_gdf : gpd.GeoDataFrame, buffer_size : int) -> nx.DiGraph:
     
     logger.info('Validating input')
     blocks_gdf = BlocksSchema(blocks_gdf)
@@ -71,7 +75,7 @@ def generate_adjacency_graph(blocks_gdf : gpd.GeoDataFrame) -> nx.DiGraph:
     adj_graph = nx.DiGraph(None, crs=blocks_gdf.crs) # 
     adj_graph.add_nodes_from([(i, row.to_dict()) for i,row in blocks_gdf.iterrows()])
 
-    edges_gdf = _generate_adjacency_edges(blocks_gdf)
+    edges_gdf = _generate_adjacency_edges(blocks_gdf, buffer_size)
     # edges_gdf = generate_edges_features(edges_gdf, blocks_gdf)
     
     adj_graph.add_edges_from([(i[0], i[1], row.to_dict()) for i,row in edges_gdf.iterrows()])
